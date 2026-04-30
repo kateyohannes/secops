@@ -1,0 +1,23 @@
+# Example .secops-ignore file for baseline management
+{
+  "finding_ids": [
+    "GSECR-G101",
+    "SEMGR-bandit.B105"
+  ],
+  "rule_ids": [
+    "G101",
+    "bandit.B105"
+  ],
+  "paths": [
+    "vendor/",
+    "node_modules/",
+    "test/",
+    "mocks/"
+  ],
+  "comment": "Add finding IDs, rule IDs, or paths to ignore during scanning",
+  "examples": {
+    "finding_ids": ["GSECR-G101", "SEMGR-bandit.B105"],
+    "rule_ids": ["G101", "bandit.B105"],
+    "paths": ["vendor/", "node_modules/", "test/"]
+  }
+}

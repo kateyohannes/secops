@@ -1,0 +1,21 @@
+# Example custom rules configuration
+scanners:
+  semgrep:
+    enabled: true
+    config: "auto"  # or path to custom rules
+    args: []
+  gosec:
+    enabled: true
+    args: []
+  secrets:
+    enabled: true
+    config: null
+  cve:
+    enabled: true
+    ecosystems: ["Go", "npm", "PyPI"]
+
+# Custom rules directory (local)
+rules_dir: "/path/to/custom/rules"
+
+# Custom rules URL (remote - e.g., GitHub repo)
+rules_url: "https://github.com/your-org/security-rules"

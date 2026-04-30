@@ -1,0 +1,9 @@
+# Audit logging configuration
+audit:
+  enabled: true
+  log_file: "/var/log/secops-audit.log"
+  # Splunk HTTP Event Collector
+  # splunk_url: "https://splunk.example.com:8088/services/collector/event"
+  # splunk_token: "your-splunk-hec-token"
+  # Syslog server (TCP)
+  # syslog_server: "localhost:514"

@@ -1,155 +1,154 @@
 # SecOps Tool 🛡️
 
-An enterprise-grade, extensible Security Operations orchestration platform. 
+An enterprise-grade, extensible Security Operations tool for modern DevSecOps pipelines.
 
-SecOps Tool provides a unified CLI interface to run static analysis (SAST), software composition analysis (SCA/CVE), secrets detection, and dynamic analysis (DAST) across your codebases. It is built for speed, CI/CD pipeline integration, and developer experience.
+SecOps Tool provides a unified CLI interface to run **SAST**, **DAST**, **SCA/CVE**, and **Secrets Detection** across your codebases. Built for speed, CI/CD integration, and developer experience.
+
+---
 
 ## ✨ Key Features
 
-* **🏎️ High Performance:** Executes multiple security engines concurrently.
+* **🏎️ High Performance:** Executes multiple security engines concurrently using ThreadPoolExecutor.
 * **🔌 Extensible Architecture:** Drop-in plugin system for adding new scanners (Semgrep, Gosec, Gitleaks, Nuclei, etc.).
 * **🤖 Auto-Remediation:** Safely updates vulnerable dependencies automatically (`--fix`).
 * **🧠 Stateful Baselines:** Suppress false positives and accepted risks using `.secops-ignore` files.
 * **🔄 Differential Scanning:** Only scan files changed in your current Git branch/PR (`--diff`).
 * **🛑 CI/CD Ready:** Exit codes designed for pipeline gatekeeping (`--fail-on`).
-* **📊 Standardized Reporting:** Exports to beautiful CLI tables, JSON, and Enterprise SARIF formats.
+* **📊 Standardized Reporting:** Exports to beautiful CLI output, JSON, SARIF, and CycloneDX SBOM.
 * **🔐 Secure Output:** Automatically redacts high-entropy secrets and API keys from logs.
 * **📦 SBOM Generation:** Instantly generate CycloneDX or SPDX Software Bill of Materials.
+* **🔭 Audit Logging:** SIEM integration via Splunk, Syslog, or file-based logging.
 
 ---
 
-## 🚀 Installation
+## 🚀 Quick Start
 
-### Option 1: Docker Compose (Highly Recommended)
-The easiest way to run the tool with all dependencies (Python, Go, Node.js, and external scanner binaries) pre-installed.
-
-Place the code you want to scan in a `./scan-target` directory next to the `docker-compose.yml`, then run:
+### Option 1: Docker (Recommended)
 ```bash
-# Build the image and run a default scan
-docker compose up secops
-
-# Run with custom flags (e.g., auto-fix and SARIF output)
-docker compose run --rm secops --fix --format=sarif --output=/scan/results.sarif
-```
-
-### Option 2: Docker CLI
-
-```bash
-# Build the multi-stage Docker image
+# Build and run with all dependencies pre-installed
 docker build -t secops-tool .
-
-# Run the tool against your current directory
-docker run --rm -v $(pwd):/app secops-tool scan .
+docker run --rm -v $(pwd):/scan secops-tool scan /scan
 ```
 
-### Option 3: Local Installation
-If you prefer running it natively, install the Python package.
-
+### Option 2: Local Installation
 ```bash
-# Install the CLI tool
 pip install -e .
-
-# Verify your host environment has required external binaries (gosec, semgrep, gitleaks, etc.)
-secops check_env
-```
-
----
-
-## 📖 Usage Guide
-
-### Basic Scanning
-
-Scan the current directory using default scanners (SAST, Secrets, CVE):
-```bash
 secops scan .
 ```
 
-Run specific categories of scanners (e.g., just DAST and Secrets):
+---
+
+## 📖 Usage Examples
+
+### Basic Scan
 ```bash
-secops scan . --scanners dast,secrets
+# Scan current directory with all scanners
+secops scan .
+
+# Scan specific path with SAST only
+secops scan /path/to/project --scanners=sast
+
+# Scan with secrets and CVE detection
+secops scan /path/to/project --scanners=secrets,cve
 ```
 
 ### CI/CD Integration
-
-Fail the build if any `critical` or `high` vulnerabilities are found:
 ```bash
-secops scan . --fail-on high
+# Fail pipeline on critical findings
+secops scan . --fail-on=critical --format=sarif --output=results.sarif
+
+# Auto-fix vulnerable dependencies
+secops scan . --fix --scanners=cve
+
+# Only scan changed files in PR
+secops scan . --diff main
 ```
 
-Output results in **SARIF** format (ideal for GitHub Advanced Security or SonarQube ingestion):
+### Dynamic Application Security Testing (DAST)
 ```bash
-secops scan . --format sarif -o results.sarif
+# Scan running application with Nuclei
+secops scan https://staging.example.com --scanners=dast
 ```
 
-### Differential Scanning (Pull Requests)
-
-Only scan files that have changed since the `main` branch (saves massive amount of time in large monorepos):
+### Baseline Management
 ```bash
-secops scan . --diff origin/main
-```
+# Initialize baseline file
+secops baseline init /path/to/project
 
-### Auto-Remediation (Fixing Issues)
+# Add finding to ignore list
+secops baseline add /path/to/project --finding-id GSECR-G101
 
-Attempt to automatically bump dependency versions in `package.json`, `go.mod`, or `requirements.txt` to fix identified CVEs safely:
-```bash
-secops scan . --fix
-```
-
-### Generating an SBOM
-
-Generate a CycloneDX JSON Software Bill of Materials for compliance:
-```bash
-secops sbom . --format cyclonedx-json -o sbom.json
+# View current baseline
+secops baseline show /path/to/project
 ```
 
 ---
 
-## 🎯 Baseline Management (Suppressing False Positives)
+## 🔧 Configuration
 
-Tired of the scanner flagging test files or accepted risks? Use the baseline manager to track them in code.
-
-1. **Initialize a baseline file** in your repository:
-   ```bash
-   secops baseline init .
-   ```
-2. **Ignore a specific rule** (e.g., G101 for hardcoded credentials in test files):
-   ```bash
-   secops baseline add . --rule-id G101
-   ```
-3. **Ignore a specific path** (e.g., vendor directories):
-   ```bash
-   secops baseline add . --path "vendor/"
-   ```
-4. **View current baseline**:
-   ```bash
-   secops baseline show .
-   ```
-
-*(Note: The `secops scan` command uses the `.secops-ignore` baseline file by default. You can bypass it with `--no-ignore-baseline`)*.
-
----
-
-## 🛠️ Architecture & Extensibility
-
-Adding a new scanner to the SecOps Tool is trivial thanks to the dynamic loader. 
-
-1. Create a new Python file in `scanner/scanners/` (e.g., `bandit.py`).
-2. Inherit from `BaseScanner` and implement the `scan` method.
-
-```python
-from scanner.scanners.base import BaseScanner
-from scanner.types import Finding, ScanResult
-
-class BanditScanner(BaseScanner):
-    name = "bandit"
-
-    def scan(self, target_path: str, config: dict) -> ScanResult:
-        # Run your tool via subprocess and parse its output into Finding objects
-        pass
+Create a `configs/audit.yaml` for audit logging:
+```yaml
+audit:
+  enabled: true
+  log_file: "/var/log/secops-audit.log"
+  splunk_url: "https://splunk.example.com:8088/services/collector/event"
+  splunk_token: "your-splunk-token"
 ```
-The tool will automatically discover your scanner and map it to a category based on its name!
+
+Create `.secops-ignore` for baseline management:
+```json
+{
+  "finding_ids": ["GSECR-G101"],
+  "rule_ids": ["G101"],
+  "paths": ["vendor/", "node_modules/"]
+}
+```
 
 ---
 
-## 📝 Audit Logging
-For enterprise visibility, the tool supports forwarding execution logs to SIEMs (Splunk, Datadog) or Syslog. Configure this in `configs/audit.yaml`.
+## 📦 SBOM Generation
+```bash
+# Generate CycloneDX JSON SBOM
+secops sbom /path/to/project --format=cyclonedx-json --output=sbom.json
+```
+
+---
+
+## 🧪 Testing
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=scanner --cov-report=html
+```
+
+---
+
+## 📋 Requirements
+
+- Python 3.8+
+- External tools (installed automatically in Docker):
+  - `gosec` (Go SAST)
+  - `semgrep` (JS/TS SAST)
+  - `gitleaks` (Secrets detection)
+  - `osv-scanner` (CVE scanning)
+  - `nuclei` (DAST)
+  - `cdxgen` (SBOM generation)
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
+
+For enterprise support or custom rule packs, contact the security team.

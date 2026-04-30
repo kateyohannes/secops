@@ -90,7 +90,7 @@ def _print_summary(findings: list):
 
 
 @click.group()
-@click.version_option("0.2.0")
+@click.version_option("1.0.0")
 def cli():
     """SecOps Tool - Security scanner for code and dependencies."""
     pass
