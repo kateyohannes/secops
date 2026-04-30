@@ -1,10 +1,11 @@
-
+"""Scanner types for SecOps Tool."""
 from dataclasses import dataclass, field
 from typing import Optional, List
 
 
 @dataclass
 class Finding:
+    """Represents a security finding."""
     id: str
     rule_id: str
     severity: str
@@ -20,6 +21,7 @@ class Finding:
 
 @dataclass
 class ScanResult:
+    """Represents the result of a scanner run."""
     findings: List[Finding]
     scan_duration_ms: int
     scanner_name: str

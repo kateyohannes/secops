@@ -1,36 +1,22 @@
-
-from typing import List, Optional
+"""Utility functions for filtering findings."""
+from typing import List
 from scanner.types import Finding
-
-SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
 def filter_by_severity(findings: List[Finding], min_severity: str) -> List[Finding]:
-    if not min_severity:
-        return findings
-    threshold = SEVERITY_ORDER.get(min_severity.lower(), 99)
-    return [f for f in findings if SEVERITY_ORDER.get(f.severity, 99) <= threshold]
+    """Filter findings by minimum severity level."""
+    order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    min_level = order.get(min_severity.lower(), 2)
+    return [f for f in findings if order.get(f.severity, 2) <= min_level]
 
 
-def filter_by_category(findings: List[Finding], categories: List[str]) -> List[Finding]:
-    if not categories:
-        return findings
-    return [f for f in findings if f.category in categories]
-
-
-def filter_by_file(findings: List[Finding], exclude_patterns: List[str]) -> List[Finding]:
-    import fnmatch
-    if not exclude_patterns:
-        return findings
-    filtered = []
-    for f in findings:
-        excluded = any(fnmatch.fnmatch(f.file_path, p) for p in exclude_patterns)
-        if not excluded:
-            filtered.append(f)
-    return filtered
+def filter_by_category(findings: List[Finding], category: str) -> List[Finding]:
+    """Filter findings by category (SAST, SECRET, CVE)."""
+    return [f for f in findings if f.category.upper() == category.upper()]
 
 
 def deduplicate(findings: List[Finding]) -> List[Finding]:
+    """Remove duplicate findings based on rule_id + file_path + line."""
     seen = set()
     result = []
     for f in findings:

@@ -1,4 +1,4 @@
-
+"""Secrets detector using gitleaks."""
 import json
 import subprocess
 import time
@@ -8,6 +8,7 @@ from scanner.types import Finding, ScanResult
 
 
 class SecretsScanner(BaseScanner):
+    """Detect hardcoded secrets using gitleaks."""
     name = "gitleaks"
 
     def scan(self, target_path: str, config: dict) -> ScanResult:
@@ -41,11 +42,13 @@ class SecretsScanner(BaseScanner):
                                 file_path=str(item.get("File", "")),
                                 line=int(item.get("StartLine", 0)),
                                 message="Secret detected: " + str(item.get("Description", item.get("RuleID", ""))),
-                                remediation="Rotate this secret immediately",
+                                remediation="Rotate this secret immediately and remove from source code. Use environment variables or a secrets manager.",
                                 raw=item,
                             ))
             except json.JSONDecodeError:
-                pass
+                pass  # gitleaks may output nothing when no secrets found
+            except Exception as e:
+                errors.append("Error processing gitleaks results: " + str(e))
 
         duration = int((time.time() - start) * 1000)
         return ScanResult(findings, duration, self.name, errors)

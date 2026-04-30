@@ -1,4 +1,4 @@
-
+"""Configuration loader for SecOps Tool."""
 import os
 import yaml
 from typing import Optional
@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
 
 
 def load_config(config_path: Optional[str] = None) -> dict:
+    """Load configuration from file or use defaults."""
     config = DEFAULT_CONFIG.copy()
     paths = [config_path] if config_path else [
         "configs/default.yaml",
@@ -39,6 +40,7 @@ def load_config(config_path: Optional[str] = None) -> dict:
 
 
 def _deep_update(base: dict, override: dict):
+    """Recursively update nested dictionaries."""
     for k, v in override.items():
         if k in base and isinstance(base[k], dict) and isinstance(v, dict):
             _deep_update(base[k], v)

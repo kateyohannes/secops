@@ -1,7 +1,7 @@
-
-from scanner.reporter.text import render as render_text, summary_line
-from scanner.reporter.json_reporter import render_findings, render_scan_results
-from scanner.reporter.sarif import render as render_sarif
+"""Reporter module for SecOps Tool."""
+from scanner.reporter.text import render_text, summary_line, render_findings
+from scanner.reporter.json_reporter import render_scan_results
+from scanner.reporter.sarif import render_sarif
 from scanner.reporter.sbom import generate_sbom
 
 __all__ = [

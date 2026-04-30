@@ -1,4 +1,4 @@
-
+"""JS/TS AST scanner using semgrep."""
 import json
 import subprocess
 import time
@@ -8,6 +8,7 @@ from scanner.types import Finding, ScanResult
 
 
 class SemgrepScanner(BaseScanner):
+    """Scan JS/TS code for security issues using semgrep."""
     name = "semgrep"
 
     def scan(self, target_path: str, config: dict) -> ScanResult:
@@ -24,26 +25,28 @@ class SemgrepScanner(BaseScanner):
         result = self._run_cmd(args, cwd=target_path)
 
         if result.returncode not in (0, 1):
-            errors.append(f"semgrep failed: {result.stderr[:300]}")
+            errors.append("semgrep failed: " + result.stderr[:300])
         else:
             try:
                 if result.stdout.strip():
                     data = json.loads(result.stdout)
                     for result_item in data.get("results", []):
                         findings.append(Finding(
-                            id="SEMGR-" + result_item.get("check_id", "unknown"),
-                            rule_id=result_item.get("check_id", ""),
+                            id="SEMGR-" + str(result_item.get("check_id", "unknown")),
+                            rule_id=str(result_item.get("check_id", "")),
                             severity=self._map_severity(result_item.get("extra", {}).get("severity", "")),
                             category="SAST",
-                            file_path=result_item.get("path", ""),
+                            file_path=str(result_item.get("path", "")),
                             line=result_item.get("start", {}).get("line", 0),
-                            message=result_item.get("extra", {}).get("message", ""),
-                            remediation=result_item.get("extra", {}).get("fix", ""),
+                            message=str(result_item.get("extra", {}).get("message", "")),
+                            remediation=str(result_item.get("extra", {}).get("fix", "")),
                             cwe=self._extract_cwe(result_item.get("extra", {}).get("metadata", {})),
                             raw=result_item,
                         ))
             except json.JSONDecodeError:
                 errors.append("Failed to parse semgrep JSON output")
+            except Exception as e:
+                errors.append("Error processing semgrep results: " + str(e))
 
         duration = int((time.time() - start) * 1000)
         return ScanResult(findings, duration, self.name, errors)

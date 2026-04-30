@@ -1,4 +1,4 @@
-
+"""Go AST scanner using gosec."""
 import json
 import subprocess
 import tempfile
@@ -10,6 +10,7 @@ from scanner.types import Finding, ScanResult
 
 
 class GosecScanner(BaseScanner):
+    """Scan Go code for security issues using gosec."""
     name = "gosec"
 
     def scan(self, target_path: str, config: dict) -> ScanResult:
@@ -49,6 +50,8 @@ class GosecScanner(BaseScanner):
                     ))
             except json.JSONDecodeError as e:
                 errors.append("Failed to parse gosec output: " + str(e))
+            except Exception as e:
+                errors.append("Error processing gosec results: " + str(e))
             finally:
                 if os.path.exists(tmp.name):
                     os.unlink(tmp.name)
@@ -69,15 +72,15 @@ class GosecScanner(BaseScanner):
 
     def _remediation(self, rule_id: str) -> str:
         tips = {
-            "G101": "Avoid hardcoding credentials",
-            "G102": "Avoid binding to all interfaces",
-            "G201": "Use parameterized queries",
-            "G202": "Use parameterized queries",
-            "G204": "Avoid exec.Command with user input",
-            "G401": "Use strong crypto hash",
-            "G501": "Replace crypto/md5",
+            "G101": "Avoid hardcoding credentials; use environment variables or a secrets manager.",
+            "G102": "Avoid binding services to all interfaces; bind to localhost or specific IPs.",
+            "G201": "Use parameterized queries instead of string formatting for SQL queries.",
+            "G202": "Use parameterized queries instead of string concatenation for SQL queries.",
+            "G204": "Avoid exec.Command with user input; use allowlists for commands.",
+            "G401": "Use strong cryptographic hash functions (SHA-256+) instead of MD5/SHA1.",
+            "G501": "Replace crypto/md5 with crypto/sha256 or other strong hash.",
         }
-        return tips.get(rule_id, "Review and apply secure coding")
+        return tips.get(rule_id, "Review this finding and apply secure coding practices.")
 
     def _tool_available(self, tool: str) -> bool:
         try:

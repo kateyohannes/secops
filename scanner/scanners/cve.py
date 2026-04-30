@@ -1,4 +1,4 @@
-
+"""CVE scanner using osv-scanner."""
 import json
 import subprocess
 import time
@@ -8,6 +8,7 @@ from scanner.types import Finding, ScanResult
 
 
 class CVEScanner(BaseScanner):
+    """Scan dependencies for CVEs using osv-scanner."""
     name = "osv-scanner"
 
     ECOSYSTEM_MAP = {
@@ -48,6 +49,8 @@ class CVEScanner(BaseScanner):
                     findings = self._parse_osv_results(data)
             except json.JSONDecodeError:
                 errors.append("Failed to parse osv-scanner JSON output")
+            except Exception as e:
+                errors.append("Error processing osv-scanner results: " + str(e))
 
         duration = int((time.time() - start) * 1000)
         return ScanResult(findings, duration, self.name, errors)
@@ -85,7 +88,7 @@ class CVEScanner(BaseScanner):
             pkg_name = pkg.get("name", "package")
             if versions:
                 return "Update " + pkg_name + " to version not in: " + ", ".join(versions[:5])
-        return "Update the affected package"
+        return "Update the affected package to a patched version."
 
     def _map_cvss(self, severity: str) -> str:
         mapping = {"CRITICAL": "critical", "HIGH": "high", "MEDIUM": "medium", "LOW": "low", "UNKNOWN": "low"}

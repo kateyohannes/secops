@@ -1,52 +1,35 @@
-
-import json
-import os
+"""SBOM generator for SecOps Tool."""
 import subprocess
-from typing import List, Dict, Optional
+import os
+from typing import Optional
 
 
-def generate_sbom(target_path: str, output_path: Optional[str] = None, fmt: str = "cyclonedx-json") -> str:
+def generate_sbom(target_path: str, output_path: Optional[str] = None, format: str = "cyclonedx-json") -> str:
+    """Generate SBOM using cdxgen."""
     if not _tool_available("cdxgen"):
-        return json.dumps({
-            "error": "cdxgen not found. Install: npm install -g @cyclonedx/cdxgen",
-            "help": "https://github.com/CycloneDX/cdxgen"
-        })
+        return "Error: cdxgen not found. Install: npm install -g @cyclonedx/cdxgen"
 
-    args = ["cdxgen", "-t", "auto", "-o", "/dev/stdout", target_path]
-    if fmt == "spdx-json":
-        args += ["-f", "spdx"]
+    args = ["cdxgen", "-t", "auto", "-o", output_path or "sbom.json"]
+    if format == "spdx-json":
+        args += ["-f", "spdxjson"]
+    else:
+        args += ["-f", "json"]
 
-    result = subprocess.run(args, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(args, capture_output=True, text=True, cwd=target_path, timeout=300)
 
     if result.returncode != 0:
-        return json.dumps({"error": "cdxgen failed: " + result.stderr[:300]})
+        return "Error generating SBOM: " + result.stderr[:300]
 
-    output = result.stdout
-    if output_path:
-        with open(output_path, "w") as out:
-            out.write(output)
-
-    return output
-
-
-def parse_sbom_for_cves(sbom_json: str) -> List[Dict]:
-    try:
-        sbom = json.loads(sbom_json)
-        components = sbom.get("components", [])
-        vulns = []
-        for comp in components:
-            if "version" in comp and "name" in comp:
-                vulns.append({
-                    "name": comp["name"],
-                    "version": comp["version"],
-                    "purl": comp.get("purl", ""),
-                })
-        return vulns
-    except json.JSONDecodeError:
-        return []
+    if output_path and os.path.exists(output_path):
+        return f"SBOM generated: {output_path}"
+    elif os.path.exists("sbom.json"):
+        with open("sbom.json", "r") as f:
+            return f.read()
+    return "SBOM generation completed"
 
 
 def _tool_available(tool: str) -> bool:
+    """Check if a tool is available in PATH."""
     try:
         subprocess.run([tool, "--version"], capture_output=True, timeout=10)
         return True
