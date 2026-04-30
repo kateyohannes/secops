@@ -1,0 +1,10 @@
+# Docker Compose for SecOps Tool
+version: "3.8"
+
+services:
+  secops:
+    build: .
+    volumes:
+      - ./scan-target:/scan:ro
+    entrypoint: ["secops", "scan", "/scan"]
+    # Example: docker compose run --rm secops --format=sarif --output=/scan/results.sarif

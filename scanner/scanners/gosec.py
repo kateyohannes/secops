@@ -4,7 +4,8 @@ import subprocess
 import tempfile
 import os
 import time
-from typing import List
+import yaml
+from typing import List, Dict
 from scanner.scanners.base import BaseScanner
 from scanner.types import Finding, ScanResult
 
@@ -12,6 +13,31 @@ from scanner.types import Finding, ScanResult
 class GosecScanner(BaseScanner):
     """Scan Go code for security issues using gosec."""
     name = "gosec"
+    _remediations: Dict[str, str] = {}
+
+    def __init__(self):
+        super().__init__()
+        self._load_remediations()
+
+    def _load_remediations(self):
+        """Load remediation advice from external YAML file."""
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "configs",
+            "remediations.yaml"
+        )
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    data = yaml.safe_load(f)
+                self._remediations = data.get("gosec", {}) if data else {}
+            except Exception:
+                pass
+        if not self._remediations:
+            self._remediations = {
+                "G101": "Avoid hardcoding credentials; use environment variables or a secrets manager.",
+                "G102": "Avoid binding services to all interfaces; bind to localhost or specific IPs.",
+            }
 
     def scan(self, target_path: str, config: dict) -> ScanResult:
         start = time.time()
@@ -71,20 +97,4 @@ class GosecScanner(BaseScanner):
         return ""
 
     def _remediation(self, rule_id: str) -> str:
-        tips = {
-            "G101": "Avoid hardcoding credentials; use environment variables or a secrets manager.",
-            "G102": "Avoid binding services to all interfaces; bind to localhost or specific IPs.",
-            "G201": "Use parameterized queries instead of string formatting for SQL queries.",
-            "G202": "Use parameterized queries instead of string concatenation for SQL queries.",
-            "G204": "Avoid exec.Command with user input; use allowlists for commands.",
-            "G401": "Use strong cryptographic hash functions (SHA-256+) instead of MD5/SHA1.",
-            "G501": "Replace crypto/md5 with crypto/sha256 or other strong hash.",
-        }
-        return tips.get(rule_id, "Review this finding and apply secure coding practices.")
-
-    def _tool_available(self, tool: str) -> bool:
-        try:
-            subprocess.run([tool, "--version"], capture_output=True, timeout=10)
-            return True
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+        return self._remediations.get(rule_id, "Review this finding and apply secure coding practices.")

@@ -1,6 +1,7 @@
 """SecOps Tool - Security scanner for code and dependencies."""
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -44,6 +45,8 @@ def scan(target, scanners, format, output, config, severity, show_details):
     results = []
     all_findings = []
 
+    # Build scanner instances
+    scanner_instances = []
     scanner_map = {
         "sast": [GosecScanner(), SemgrepScanner()],
         "secrets": [SecretsScanner()],
@@ -51,13 +54,32 @@ def scan(target, scanners, format, output, config, severity, show_details):
     }
 
     for name in scanner_names:
-        for scanner in scanner_map.get(name, []):
-            click.echo(f"Running {scanner.name} scanner...", err=True)
-            result = scanner.scan(os.path.abspath(target), cfg.get("scanners", {}).get(name, {}))
-            results.append(result)
-            all_findings.extend(result.findings)
-            for err in result.errors:
-                click.echo(f"  Warning: {err}", err=True)
+        scanner_instances.extend(scanner_map.get(name, []))
+
+    # Run scanners concurrently
+    if scanner_instances:
+        click.echo(f"Running {len(scanner_instances)} scanners concurrently...", err=True)
+        with ThreadPoolExecutor(max_workers=len(scanner_instances)) as executor:
+            future_to_scanner = {
+                executor.submit(
+                    scanner.scan,
+                    os.path.abspath(target),
+                    cfg.get("scanners", {}).get(scanner.name, {})
+                ): scanner
+                for scanner in scanner_instances
+            }
+
+            for future in as_completed(future_to_scanner):
+                scanner = future_to_scanner[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    all_findings.extend(result.findings)
+                    for err in result.errors:
+                        click.echo(f"  Warning from {scanner.name}: {err}", err=True)
+                    click.echo(f"  {scanner.name} completed", err=True)
+                except Exception as e:
+                    click.echo(f"  Error in {scanner.name}: {e}", err=True)
 
     # Apply filters
     if severity:
@@ -94,6 +116,39 @@ def sbom(target, format, output):
         click.echo(f"SBOM written to {output}", err=True)
     else:
         click.echo(result)
+
+
+@cli.command()
+def check_env():
+    """Check if required security tools are installed."""
+    import shutil
+
+    tools = {
+        "gosec": "go install github.com/securego/gosec/v2/cmd/gosec@latest",
+        "semgrep": "pip install semgrep",
+        "gitleaks": "go install github.com/zricethezav/gitleaks/v8@latest",
+        "osv-scanner": "go install github.com/google/osv-scanner/cmd/osv-scanner@latest",
+        "cdxgen": "npm install -g @cyclonedx/cdxgen",
+    }
+
+    click.echo("Checking environment for required tools...\n")
+    all_good = True
+
+    for tool, install_cmd in tools.items():
+        if shutil.which(tool):
+            click.echo(f"  ✓ {tool:15} - Found")
+        else:
+            click.echo(f"  ✗ {tool:15} - Missing")
+            click.echo(f"    Install: {install_cmd}")
+            all_good = False
+
+    click.echo("")
+    if all_good:
+        click.echo("All tools are installed and ready!")
+    else:
+        click.echo("Some tools are missing. Install them to enable all scanners.")
+        click.echo("Tip: Use Docker image to get all tools pre-installed:")
+        click.echo("  docker build -t secops .")
 
 
 if __name__ == "__main__":
