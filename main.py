@@ -40,32 +40,30 @@ def _severity_color(severity: str) -> str:
     return {"critical": "bold red", "high": "red", "medium": "yellow", "low": "green"}.get(severity, "white")
 
 
-def _format_findings_table(findings: list) -> Table:
-    """Create a rich table with findings."""
-    table = Table(title="Security Findings", box=box.ROUNDED, show_lines=True)
-    table.add_column("#", style="dim", justify="right", width=4)
-    table.add_column("Severity", width=12, justify="center")
-    table.add_column("Rule ID", style="cyan", width=25)
-    table.add_column("File:Line", style="blue", width=35)
-    table.add_column("Message", style="white", no_wrap=False, min_width=40, max_width=60)
-
+def _format_findings_paragraph(findings: list) -> str:
+    """Format findings as colored paragraphs with padding."""
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     sorted_findings = sorted(findings, key=lambda x: (severity_order.get(x.severity, 99), x.file_path))
 
+    output = []
     for idx, f in enumerate(sorted_findings, 1):
-        severity_text = Text(f.severity.upper(), style=_severity_color(f.severity))
-        # Show shortened path
-        short_path = f.file_path
-        if len(short_path) > 32:
-            short_path = "..." + short_path[-29:]
-        location = f"{short_path}:{f.line}"
-        # Truncate message if too long
-        message = f.message
-        if len(message) > 80:
-            message = message[:77] + "..."
-        table.add_row(str(idx), severity_text, f.rule_id, location, message)
+        color = _severity_color(f.severity)
 
-    return table
+        # Format as paragraph with tab-like padding - show FULL path
+        msg = f.message[:100] + ("..." if len(f.message) > 100 else "")
+        paragraph = f"""
+    [bold]{idx}. [{color}]{f.severity.upper()}[/bold][/{color}]
+        [dim]Rule:[/dim] [cyan]{f.rule_id}[/cyan]
+        [dim]File:[/dim] [blue]{f.file_path}:{f.line}[/blue]
+        [dim]Message:[/dim] {msg}
+"""
+        if f.remediation:
+            fix = f.remediation[:80] + ('...' if len(f.remediation) > 80 else '')
+            paragraph += f"        [dim]Fix:[/dim] {fix}\n"
+
+        output.append(paragraph)
+
+    return "\n".join(output)
 
 
 def _print_summary(findings: list):
@@ -219,13 +217,7 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
         console.print("\n")
         _print_summary(all_findings)
         if all_findings:
-            console.print(_format_findings_table(all_findings))
-            if show_details:
-                console.print("\n[bold]Remediation Details:[/bold]")
-                for f in all_findings:
-                    if f.remediation:
-                        color = _severity_color(f.severity)
-                        console.print(f"  [{color}]{f.rule_id}[/]: {f.remediation}")
+            console.print(_format_findings_paragraph(all_findings))
         output_text = render_text(all_findings, show_details)
     elif format == "json":
         output_text = render_scan_results(results)

@@ -13,13 +13,13 @@ SECRET_PATTERNS: List[Tuple] = [
     (re.compile(r'AKIA[0-9A-Z]{16}'), lambda m: 'AKIA********' + m.group(0)[-4:]),
     # Slack tokens
     (re.compile(r'xox[baprs]-[0-9a-zA-Z-]{10,}'), lambda m: m.group(0)[:4] + '********' + m.group(0)[-4:]),
-    # Generic API keys in common formats
-    (re.compile(r'(api[_-]?key["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9+/=]{20,})', re.IGNORECASE), 
+    # Generic API keys in common formats (must have key= or key: prefix)
+    (re.compile(r'(api[_-]?key["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9+/=]{20,})', re.IGNORECASE),
      lambda m: m.group(1) + '********'),
     # Private key headers
     (re.compile(r'-----BEGIN [A-Z]+ PRIVATE KEY-----'), '-----BEGIN *REDACTED*-----'),
-    # Generic high-entropy strings (32+ chars of base64-like)
-    (re.compile(r'\b[a-zA-Z0-9+/]{32,}={0,2}\b'), '********[entropy_redacted]'),
+    # Generic high-entropy strings (32+ consecutive base64 chars, must start with A-Z or digit)
+    (re.compile(r'\b[0-9A-Z][a-zA-Z0-9+/]{31,}={0,2}\b'), '********[entropy_redacted]'),
 ]
 
 

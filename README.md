@@ -20,8 +20,19 @@ SecOps Tool provides a unified CLI interface to run static analysis (SAST), soft
 
 ## 🚀 Installation
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker Compose (Highly Recommended)
 The easiest way to run the tool with all dependencies (Python, Go, Node.js, and external scanner binaries) pre-installed.
+
+Place the code you want to scan in a `./scan-target` directory next to the `docker-compose.yml`, then run:
+```bash
+# Build the image and run a default scan
+docker compose up secops
+
+# Run with custom flags (e.g., auto-fix and SARIF output)
+docker compose run --rm secops --fix --format=sarif --output=/scan/results.sarif
+```
+
+### Option 2: Docker CLI
 
 ```bash
 # Build the multi-stage Docker image
@@ -31,7 +42,7 @@ docker build -t secops-tool .
 docker run --rm -v $(pwd):/app secops-tool scan .
 ```
 
-### Option 2: Local Installation
+### Option 3: Local Installation
 If you prefer running it natively, install the Python package.
 
 ```bash

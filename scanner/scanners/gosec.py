@@ -36,12 +36,15 @@ class GosecScanner(BaseScanner):
                 for issue in data.get("Issues", []):
                     severity = self._severity_map(issue.get("severity", ""))
                     rule_id = issue.get("rule_id", "unknown")
+                    # Fix: join relative path with target_path to get absolute path
+                    file_rel = issue.get("file", "")
+                    file_abs = os.path.join(target_path, file_rel) if not os.path.isabs(file_rel) else file_rel
                     findings.append(Finding(
                         id="GSECR-" + rule_id,
                         rule_id=rule_id,
                         severity=severity,
                         category="SAST",
-                        file_path=issue.get("file", ""),
+                        file_path=os.path.abspath(file_abs),
                         line=int(issue.get("line", 0)),
                         message=issue.get("details", ""),
                         cwe=self._extract_cwe(issue.get("cwe", {})),

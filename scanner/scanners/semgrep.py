@@ -2,6 +2,7 @@
 import json
 import subprocess
 import time
+import os
 from typing import List
 from scanner.scanners.base import BaseScanner
 from scanner.types import Finding, ScanResult
@@ -31,18 +32,21 @@ class SemgrepScanner(BaseScanner):
                 if result.stdout.strip():
                     data = json.loads(result.stdout)
                     for result_item in data.get("results", []):
+                        # Fix: join relative path with target_path to get absolute path
+                        file_rel = str(result_item.get("path", ""))
+                        file_abs = os.path.join(target_path, file_rel) if not os.path.isabs(file_rel) else file_rel
                         findings.append(Finding(
                             id="SEMGR-" + str(result_item.get("check_id", "unknown")),
                             rule_id=str(result_item.get("check_id", "")),
                             severity=self._map_severity(result_item.get("extra", {}).get("severity", "")),
                             category="SAST",
-                            file_path=str(result_item.get("path", "")),
+                            file_path=os.path.abspath(file_abs),
                             line=result_item.get("start", {}).get("line", 0),
                             message=str(result_item.get("extra", {}).get("message", "")),
                             remediation=self._get_remediation(
-                            str(result_item.get("check_id", "")),
-                            str(result_item.get("extra", {}).get("fix", "")) or "Review this Semgrep finding and apply secure coding practices."
-                        ),
+                                str(result_item.get("check_id", "")),
+                                str(result_item.get("extra", {}).get("fix", "")) or "Review this Semgrep finding and apply secure coding practices."
+                            ),
                             cwe=self._extract_cwe(result_item.get("extra", {}).get("metadata", {})),
                             raw=result_item,
                         ))
