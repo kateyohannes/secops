@@ -1,6 +1,7 @@
 """SecOps Tool - Security scanner for code and dependencies."""
 import sys
 import os
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,6 +26,10 @@ from scanner.remediation import AutoRemediation
 from scanner.reporter import render_text, summary_line
 from scanner.reporter import render_findings, render_scan_results
 from scanner.reporter import render_sarif, generate_sbom
+from scanner.reporter.redactor import OutputRedactor
+from scanner.audit import setup_audit_logging, AuditLogger
+from scanner.rules import load_custom_rules, update_semgrep_config
+from scanner.triage import auto_triage
 from scanner.utils.filters import filter_by_severity, filter_by_category, deduplicate
 
 console = Console()
@@ -110,12 +115,24 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
     cfg = load_config(config)
     scanner_names = [s.strip() for s in scanners.split(",")]
 
+    # Initialize audit logger
+    audit_logger = setup_audit_logging()
+    start_time = time.time()
+
     results = []
     all_findings = []
     failed_scanners = []
 
     # Dynamically discover and load scanners
     scanner_map = discover_scanners()
+
+    # Load custom rules if specified
+    custom_rules = []
+    if cfg.get("rules_dir") or cfg.get("rules_url"):
+        custom_rules = load_custom_rules(cfg.get("rules_dir"), cfg.get("rules_url"))
+        if custom_rules:
+            semgrep_config = update_semgrep_config(custom_rules)
+            cfg["scanners"]["semgrep"] = semgrep_config.get("semgrep", {})
 
     # Build scanner instances based on user selection
     scanner_instances = []
@@ -166,6 +183,9 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
         all_findings = filter_by_severity(all_findings, severity)
     all_findings = deduplicate(all_findings)
 
+    # Apply auto-triage heuristics
+    all_findings = auto_triage(all_findings)
+
     # Apply baseline/ignore file
     if ignore_baseline:
         baseline = BaselineManager(os.path.abspath(target))
@@ -190,6 +210,10 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
         if failed > 0:
             console.print(f"[yellow]Failed to fix {failed} finding(s).[/yellow]")
 
+    # Apply secret redaction to findings
+    redactor = OutputRedactor(enabled=True)
+    all_findings = redactor.redact_findings(all_findings)
+
     # Generate output
     if format == "text":
         console.print("\n")
@@ -200,12 +224,15 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
                 console.print("\n[bold]Remediation Details:[/bold]")
                 for f in all_findings:
                     if f.remediation:
-                        console.print(f"  [{_severity_color(f.severity)}]{f.rule_id}[/]: {f.remediation}")
+                        color = _severity_color(f.severity)
+                        console.print(f"  [{color}]{f.rule_id}[/]: {f.remediation}")
         output_text = render_text(all_findings, show_details)
     elif format == "json":
         output_text = render_scan_results(results)
+        output_text = redactor.redact(output_text)
     elif format == "sarif":
         output_text = render_sarif(results)
+        output_text = redactor.redact(output_text)
     else:
         output_text = render_text(all_findings, show_details)
 
@@ -224,12 +251,42 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
             for f in all_findings:
                 if severity_order.get(f.severity, 3) <= fail_level:
                     console.print(f"\n[red bold]Failing due to {fail_on}+ severity finding. Exiting with code 1.[/red bold]")
+                    # Log before exit
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    audit_logger.log_scan(
+                        target=target,
+                        findings_count=len(all_findings),
+                        duration_ms=duration_ms,
+                        scanners_used=scanner_names,
+                        fail_on=fail_on,
+                        exit_code=1
+                    )
                     sys.exit(1)
 
     # If we had scanner failures, exit with code 1
     if failed_scanners:
         console.print(f"\n[yellow]{len(failed_scanners)} scanner(s) failed. Exiting with code 1.[/yellow]")
+        duration_ms = int((time.time() - start_time) * 1000)
+        audit_logger.log_scan(
+            target=target,
+            findings_count=len(all_findings),
+            duration_ms=duration_ms,
+            scanners_used=scanner_names,
+            fail_on=fail_on,
+            exit_code=1
+        )
         sys.exit(1)
+
+    # Log successful scan
+    duration_ms = int((time.time() - start_time) * 1000)
+    audit_logger.log_scan(
+        target=target,
+        findings_count=len(all_findings),
+        duration_ms=duration_ms,
+        scanners_used=scanner_names,
+        fail_on=fail_on,
+        exit_code=0
+    )
 
 
 @cli.command()

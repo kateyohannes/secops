@@ -19,6 +19,7 @@ def discover_scanners(scanner_dir: str = None) -> Dict[str, List[BaseScanner]]:
         "sast": [],
         "secrets": [],
         "cve": [],
+        "dast": [],
     }
 
     # Map scanner names to categories based on tool type
@@ -29,6 +30,9 @@ def discover_scanners(scanner_dir: str = None) -> Dict[str, List[BaseScanner]]:
         "gitleaks": "secrets",
         "cve": "cve",
         "osv": "cve",
+        "nuclei": "dast",
+        "nuclei_scanner": "dast",
+        "NucleiScanner": "dast",
     }
 
     # Scan for Python files in the scanners directory
@@ -53,6 +57,8 @@ def discover_scanners(scanner_dir: str = None) -> Dict[str, List[BaseScanner]]:
                                 scanners_by_category[category].append(instance)
                                 break
                     except Exception as e:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
                         print(f"Warning: Failed to instantiate {name}: {e}", file=sys.stderr)
 
         except Exception as e:

@@ -11,8 +11,10 @@ class NucleiScanner(BaseScanner):
 
     name = "nuclei"
 
-    def scan(self, target_url: str, config: dict) -> ScanResult:
+    def scan(self, target_path: str, config: dict) -> ScanResult:
         """Scan a running application for vulnerabilities."""
+        # For DAST, target_path should be a URL
+        target_url = target_path
         start = time.time()
         findings: List[Finding] = []
         errors: List[str] = []
@@ -31,9 +33,6 @@ class NucleiScanner(BaseScanner):
         # Severity filter
         if config.get("severity"):
             args += ["-severity", config["severity"]]
-
-        # Output format
-        args += ["-o", "/dev/stdout"]
 
         result = self._run_cmd(args)
 
