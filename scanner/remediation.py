@@ -79,7 +79,7 @@ class AutoRemediation:
         if not pkg_name:
             return False
 
-        # Upgrade package
+        # Upgrade package with safe upgrade strategy
         result = subprocess.run(
             ["pip", "install", "--upgrade", "--upgrade-strategy", "only-if-needed", pkg_name],
             capture_output=True,
@@ -90,16 +90,53 @@ class AutoRemediation:
         if result.returncode != 0:
             return False
 
-        # Update requirements.txt with new version
+        # Get the new installed version
+        show_result = subprocess.run(
+            ["pip", "show", pkg_name],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if show_result.returncode != 0:
+            return True  # Package upgraded but couldn't update requirements.txt
+
+        # Extract version from pip show output
+        new_version = None
+        for line in show_result.stdout.splitlines():
+            if line.startswith("Version:"):
+                new_version = line.split(":", 1)[1].strip()
+                break
+
+        if not new_version:
+            return True
+
+        # Update requirements.txt using native Python (proper approach)
         try:
-            subprocess.run(
-                ["pip", "freeze", "|", "grep", "-i", pkg_name, ">>", file_path],
-                shell=True,
-                capture_output=True,
-                timeout=30
-            )
-        except Exception:
-            pass  # Non-critical if freeze fails
+            with open(file_path, "r") as f:
+                lines = f.readlines()
+
+            # Normalize package name for comparison (case-insensitive, treat - and _ as equivalent)
+            normalized_pkg = pkg_name.lower().replace("-", "_")
+
+            updated_lines = []
+            for line in lines:
+                stripped = line.strip()
+                # Check if this line is the package we're updating
+                if stripped and not stripped.startswith("#"):
+                    # Extract package name from requirement (handles ==, >=, ~=, etc.)
+                    pkg_part = stripped.split("=")[0].split(">")[0].split("<")[0].strip()
+                    if pkg_part.lower().replace("-", "_") == normalized_pkg:
+                        # Replace with new version
+                        updated_lines.append(f"{pkg_name}=={new_version}\n")
+                        continue
+                updated_lines.append(line)
+
+            with open(file_path, "w") as f:
+                f.writelines(updated_lines)
+
+        except Exception as e:
+            print(f"Warning: Failed to update {file_path}: {e}")
 
         return True
 
