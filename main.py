@@ -13,6 +13,8 @@ except ImportError:
 
 from scanner.config import load_config
 from scanner.scanners.loader import discover_scanners
+from scanner.baseline import BaselineManager
+from scanner.remediation import AutoRemediation
 from scanner.reporter import render_text, summary_line
 from scanner.reporter import render_findings, render_scan_results
 from scanner.reporter import render_sarif, generate_sbom
@@ -35,7 +37,10 @@ def cli():
 @click.option("--severity", help="Minimum severity filter (critical, high, medium, low).")
 @click.option("--show-details/--no-details", default=False, help="Show remediation details.")
 @click.option("--fail-on", default=None, help="Exit with error if findings meet or exceed this severity (for CI/CD).")
-def scan(target, scanners, format, output, config, severity, show_details, fail_on):
+@click.option("--ignore-baseline/--no-ignore-baseline", default=True, help="Use .secops-ignore baseline to filter findings.")
+@click.option("--fix/--no-fix", default=False, help="Attempt to automatically fix fixable findings (CVE package updates).")
+@click.option("--diff", default=None, help="Only scan files changed since this git reference (e.g., main, HEAD~1).")
+def scan(target, scanners, format, output, config, severity, show_details, fail_on, ignore_baseline, fix, diff):
     """Scan target directory for security issues."""
     cfg = load_config(config)
     scanner_names = [s.strip() for s in scanners.split(",")]
@@ -92,6 +97,31 @@ def scan(target, scanners, format, output, config, severity, show_details, fail_
     if severity:
         all_findings = filter_by_severity(all_findings, severity)
     all_findings = deduplicate(all_findings)
+
+    # Apply baseline/ignore file
+    if ignore_baseline:
+        baseline = BaselineManager(os.path.abspath(target))
+        original_count = len(all_findings)
+        all_findings = baseline.filter_findings(all_findings)
+        ignored_count = original_count - len(all_findings)
+        if ignored_count >0:
+            click.echo(f"  Ignored {ignored_count} finding(s) from baseline.", err=True)
+
+    # Apply differential scanning (git diff)
+    if diff:
+        all_findings = _filter_by_git_diff(all_findings, target, diff)
+        click.echo(f"  Filtered to findings in changed files (--diff {diff}).", err=True)
+
+    # Apply auto-remediation
+    if fix and all_findings:
+        remediator = AutoRemediation(os.path.abspath(target))
+        fixed, failed = remediator.fix_all(all_findings)
+        if fixed > 0:
+            click.echo(f"  Auto-fixed {fixed} finding(s).", err=True)
+            # Remove fixed findings from the list
+            all_findings = [f for f in all_findings if not remediator.can_fix(f)]
+        if failed > 0:
+            click.echo(f"  Failed to fix {failed} finding(s).", err=True)
 
     # Generate output
     if format == "text":
@@ -170,6 +200,115 @@ def check_env():
         click.echo("Some tools are missing. Install them to enable all scanners.")
         click.echo("Tip: Use Docker image to get all tools pre-installed:")
         click.echo("  docker build -t secops .")
+
+
+@cli.group()
+def baseline():
+    """Manage baseline/ignore file for persistent findings filtering."""
+    pass
+
+
+@baseline.command("init")
+@click.argument("target", default=".", type=click.Path(exists=True))
+def baseline_init(target):
+    """Create a new .secops-ignore file in the target directory."""
+    path = BaselineManager.create_default(target)
+    click.echo(f"Created baseline file: {path}")
+    click.echo("Edit this file to ignore specific findings, rules, or paths.")
+
+
+@baseline.command("show")
+@click.argument("target", default=".", type=click.Path(exists=True))
+def baseline_show(target):
+    """Show current baseline/ignore settings."""
+    manager = BaselineManager(target)
+    click.echo("=== SecOps Baseline (Ignored Items) ===")
+    click.echo(f"\nIgnored Finding IDs ({len(manager.ignored_ids)}):")
+    for fid in sorted(manager.ignored_ids):
+        click.echo(f"  - {fid}")
+    click.echo(f"\nIgnored Rule IDs ({len(manager.ignored_rules)}):")
+    for rule in sorted(manager.ignored_rules):
+        click.echo(f"  - {rule}")
+    click.echo(f"\nIgnored Paths ({len(manager.ignored_paths)}):")
+    for path in sorted(manager.ignored_paths):
+        click.echo(f"  - {path}")
+
+
+@baseline.command("add")
+@click.argument("target", default=".", type=click.Path(exists=True))
+@click.option("--finding-id", help="Finding ID to ignore (e.g., GSECR-G101).")
+@click.option("--rule-id", help="Rule ID to ignore (e.g., G101).")
+@click.option("--path", help="Path to ignore (e.g., vendor/).")
+def baseline_add(target, finding_id, rule_id, path):
+    """Add items to the baseline ignore list."""
+    manager = BaselineManager(target)
+    if finding_id:
+        manager.add_ignored_finding(type("F", (), {"id": finding_id})())
+        click.echo(f"Ignored finding: {finding_id}")
+    if rule_id:
+        manager.add_ignored_rule(rule_id)
+        click.echo(f"Ignored rule: {rule_id}")
+    if path:
+        manager.add_ignored_path(path)
+        click.echo(f"Ignored path: {path}")
+    if not any([finding_id, rule_id, path]):
+        click.echo("Please specify --finding-id, --rule-id, or --path")
+
+
+def _filter_by_git_diff(findings: list, target_path: str, ref: str) -> list:
+    """Filter findings to only include files changed since the git reference."""
+    import subprocess
+
+    try:
+        # Get list of changed files from git diff
+        result = subprocess.run(
+            ["git", "diff", "--name-only", ref + "..."],
+            cwd=target_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            print(f"Warning: git diff failed: {result.stderr}")
+            return findings
+
+        changed_files = set(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+        if not changed_files:
+            return findings
+
+        # Also get untracked/modified files in working directory
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=target_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if status_result.returncode == 0:
+            for line in status_result.stdout.splitlines():
+                if len(line) > 3:
+                    changed_files.add(line[3:].strip())
+
+        # Filter findings to only include changed files
+        filtered = []
+        for f in findings:
+            # Normalize paths
+            finding_path = f.file_path
+            if finding_path.startswith(target_path):
+                finding_path = finding_path[len(target_path):].lstrip("/")
+
+            if any(changed_file.endswith(finding_path) or finding_path.endswith(changed_file)
+                   for changed_file in changed_files):
+                filtered.append(f)
+
+        return filtered
+
+    except Exception as e:
+        print(f"Warning: git diff filtering failed: {e}")
+        return findings
 
 
 if __name__ == "__main__":
