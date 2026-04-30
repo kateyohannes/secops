@@ -12,10 +12,7 @@ except ImportError:
     sys.exit(1)
 
 from scanner.config import load_config
-from scanner.scanners.gosec import GosecScanner
-from scanner.scanners.semgrep import SemgrepScanner
-from scanner.scanners.secrets import SecretsScanner
-from scanner.scanners.cve import CVEScanner
+from scanner.scanners.loader import discover_scanners
 from scanner.reporter import render_text, summary_line
 from scanner.reporter import render_findings, render_scan_results
 from scanner.reporter import render_sarif, generate_sbom
@@ -37,7 +34,8 @@ def cli():
 @click.option("--config", "-c", help="Config file path.")
 @click.option("--severity", help="Minimum severity filter (critical, high, medium, low).")
 @click.option("--show-details/--no-details", default=False, help="Show remediation details.")
-def scan(target, scanners, format, output, config, severity, show_details):
+@click.option("--fail-on", default=None, help="Exit with error if findings meet or exceed this severity (for CI/CD).")
+def scan(target, scanners, format, output, config, severity, show_details, fail_on):
     """Scan target directory for security issues."""
     cfg = load_config(config)
     scanner_names = [s.strip() for s in scanners.split(",")]
@@ -45,16 +43,15 @@ def scan(target, scanners, format, output, config, severity, show_details):
     results = []
     all_findings = []
 
-    # Build scanner instances
-    scanner_instances = []
-    scanner_map = {
-        "sast": [GosecScanner(), SemgrepScanner()],
-        "secrets": [SecretsScanner()],
-        "cve": [CVEScanner()],
-    }
+    # Dynamically discover and load scanners
+    scanner_map = discover_scanners()
 
+    # Build scanner instances based on user selection
+    scanner_instances = []
     for name in scanner_names:
         scanner_instances.extend(scanner_map.get(name, []))
+        if not scanner_map.get(name):
+            click.echo(f"  Warning: No scanners found for category '{name}'", err=True)
 
     # Run scanners concurrently
     if scanner_instances:
@@ -69,6 +66,7 @@ def scan(target, scanners, format, output, config, severity, show_details):
                 for scanner in scanner_instances
             }
 
+            failed_scanners = []
             for future in as_completed(future_to_scanner):
                 scanner = future_to_scanner[future]
                 try:
@@ -79,7 +77,16 @@ def scan(target, scanners, format, output, config, severity, show_details):
                         click.echo(f"  Warning from {scanner.name}: {err}", err=True)
                     click.echo(f"  {scanner.name} completed", err=True)
                 except Exception as e:
-                    click.echo(f"  Error in {scanner.name}: {e}", err=True)
+                    error_msg = f"Scanner {scanner.name} failed: {e}"
+                    click.echo(f"  ERROR: {error_msg}", err=True)
+                    failed_scanners.append((scanner.name, str(e)))
+
+            # Report any scanner failures
+            if failed_scanners:
+                click.echo(f"\nWarning: {len(failed_scanners)} scanner(s) failed:", err=True)
+                for name, err in failed_scanners:
+                    click.echo(f"  - {name}: {err}", err=True)
+                click.echo("Scan completed with errors. Results may be incomplete.", err=True)
 
     # Apply filters
     if severity:
@@ -102,6 +109,20 @@ def scan(target, scanners, format, output, config, severity, show_details):
         click.echo(f"Results written to {output}", err=True)
     else:
         click.echo(output_text)
+
+    # Handle fail-on for CI/CD
+    if fail_on and all_findings:
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        fail_level = severity_order.get(fail_on.lower())
+        if fail_level is not None:
+            for f in all_findings:
+                if severity_order.get(f.severity, 3) <= fail_level:
+                    click.echo(f"\nFailing due to {fail_on}+ severity finding. Exiting with code 1.", err=True)
+                    sys.exit(1)
+
+    # If we had scanner failures, exit with code 1
+    if failed_scanners:
+        sys.exit(1)
 
 
 @cli.command()

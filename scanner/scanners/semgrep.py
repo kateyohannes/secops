@@ -39,7 +39,10 @@ class SemgrepScanner(BaseScanner):
                             file_path=str(result_item.get("path", "")),
                             line=result_item.get("start", {}).get("line", 0),
                             message=str(result_item.get("extra", {}).get("message", "")),
-                            remediation=str(result_item.get("extra", {}).get("fix", "")),
+                            remediation=self._get_remediation(
+                            str(result_item.get("check_id", "")),
+                            str(result_item.get("extra", {}).get("fix", "")) or "Review this Semgrep finding and apply secure coding practices."
+                        ),
                             cwe=self._extract_cwe(result_item.get("extra", {}).get("metadata", {})),
                             raw=result_item,
                         ))

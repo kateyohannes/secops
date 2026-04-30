@@ -42,7 +42,10 @@ class SecretsScanner(BaseScanner):
                                 file_path=str(item.get("File", "")),
                                 line=int(item.get("StartLine", 0)),
                                 message="Secret detected: " + str(item.get("Description", item.get("RuleID", ""))),
-                                remediation="Rotate this secret immediately and remove from source code. Use environment variables or a secrets manager.",
+                                remediation=self._get_remediation(
+                                str(item.get("RuleID", "")),
+                                "Rotate this secret immediately and remove from source code. Use environment variables or a secrets manager."
+                            ),
                                 raw=item,
                             ))
             except json.JSONDecodeError:

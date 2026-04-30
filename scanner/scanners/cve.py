@@ -68,7 +68,10 @@ class CVEScanner(BaseScanner):
                     file_path=str(group.get("source", {}).get("path", "unknown")),
                     line=0,
                     message=self._build_message(vuln),
-                    remediation=self._build_remediation(vuln),
+                    remediation=self._get_remediation(
+                        str(vuln.get("id", "")),
+                        self._build_remediation(vuln)
+                    ),
                     cwe=self._extract_cwe(vuln),
                     cvss=self._extract_cvss_score(vuln),
                     raw=vuln,

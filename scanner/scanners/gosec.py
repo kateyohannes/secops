@@ -4,8 +4,7 @@ import subprocess
 import tempfile
 import os
 import time
-import yaml
-from typing import List, Dict
+from typing import List
 from scanner.scanners.base import BaseScanner
 from scanner.types import Finding, ScanResult
 
@@ -13,31 +12,6 @@ from scanner.types import Finding, ScanResult
 class GosecScanner(BaseScanner):
     """Scan Go code for security issues using gosec."""
     name = "gosec"
-    _remediations: Dict[str, str] = {}
-
-    def __init__(self):
-        super().__init__()
-        self._load_remediations()
-
-    def _load_remediations(self):
-        """Load remediation advice from external YAML file."""
-        config_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "configs",
-            "remediations.yaml"
-        )
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r") as f:
-                    data = yaml.safe_load(f)
-                self._remediations = data.get("gosec", {}) if data else {}
-            except Exception:
-                pass
-        if not self._remediations:
-            self._remediations = {
-                "G101": "Avoid hardcoding credentials; use environment variables or a secrets manager.",
-                "G102": "Avoid binding services to all interfaces; bind to localhost or specific IPs.",
-            }
 
     def scan(self, target_path: str, config: dict) -> ScanResult:
         start = time.time()
@@ -71,7 +45,7 @@ class GosecScanner(BaseScanner):
                         line=int(issue.get("line", 0)),
                         message=issue.get("details", ""),
                         cwe=self._extract_cwe(issue.get("cwe", {})),
-                        remediation=self._remediation(rule_id),
+                        remediation=self._get_remediation(rule_id),
                         raw=issue,
                     ))
             except json.JSONDecodeError as e:
@@ -95,6 +69,3 @@ class GosecScanner(BaseScanner):
         if isinstance(cwe_obj, dict):
             return cwe_obj.get("id", "")
         return ""
-
-    def _remediation(self, rule_id: str) -> str:
-        return self._remediations.get(rule_id, "Review this finding and apply secure coding practices.")

@@ -1,34 +1,41 @@
-# SecOps Tool - Security Scanner
-# Multi-stage build with all security tools pre-installed
+# Multi-stage Dockerfile for SecOps Tool
+# Stage 1: Build Go tools
+FROM golang:1.21-alpine AS go-builder
 
-FROM python:3.11-slim AS base
+RUN go install github.com/securego/gosec/v2/cmd/gosec@latest && \
+    go install github.com/zricethezav/gitleaks/v8@latest && \
+    go install github.com/google/osv-scanner/cmd/osv-scanner@latest
 
-# Install system dependencies
+# Stage 2: Build Python base with semgrep
+FROM python:3.11-slim AS python-base
+
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    wget \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Go for gosec and gitleaks
-RUN wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz \
-    && rm go1.21.6.linux-amd64.tar.gz
-ENV PATH="/usr/local/go/bin:$PATH"
-ENV GOPATH="/root/go"
-ENV PATH="$GOPATH/bin:$PATH"
-
-# Install security tools
-RUN go install github.com/securego/gosec/v2/cmd/gosec@latest \
-    && go install github.com/zricethezav/gitleaks/v8@latest \
-    && go install github.com/google/osv-scanner/cmd/osv-scanner@latest
 
 # Install semgrep
 RUN pip install --no-cache-dir semgrep
 
-# Install cdxgen for SBOM generation
-RUN npm install -g @cyclonedx/cdxgen
+# Stage 3: Final image
+FROM python:3.11-slim
+
+# Copy Go binaries from builder
+COPY --from=go-builder /root/go/bin/gosec /usr/local/bin/
+COPY --from=go-builder /root/go/bin/gitleaks /usr/local/bin/
+COPY --from=go-builder /root/go/bin/osv-scanner /usr/local/bin/
+
+# Copy Python and semgrep from python-base
+COPY --from=python-base /usr/local/bin/semgrep /usr/local/bin/
+COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+
+# Install Node.js and cdxgen
+RUN apt-get update && apt-get install -y \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g @cyclonedx/cdxgen \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
