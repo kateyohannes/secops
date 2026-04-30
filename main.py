@@ -258,6 +258,24 @@ def baseline_add(target, finding_id, rule_id, path):
 def _filter_by_git_diff(findings: list, target_path: str, ref: str) -> list:
     """Filter findings to only include files changed since the git reference."""
     import subprocess
+    import shutil
+
+    # Check if git is available
+    if not shutil.which("git"):
+        click.echo("  Warning: git not found in PATH. --diff requires git to be installed.", err=True)
+        return findings
+
+    # Check if directory is a git repo
+    is_git_repo = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=target_path,
+        capture_output=True,
+        timeout=10
+    )
+
+    if is_git_repo.returncode != 0:
+        click.echo("  Warning: Not a git repository. --diff requires a git repo.", err=True)
+        return findings
 
     try:
         # Get list of changed files from git diff
@@ -270,13 +288,14 @@ def _filter_by_git_diff(findings: list, target_path: str, ref: str) -> list:
         )
 
         if result.returncode != 0:
-            print(f"Warning: git diff failed: {result.stderr}")
+            click.echo(f"  Warning: git diff failed: {result.stderr}", err=True)
             return findings
 
         changed_files = set(line.strip() for line in result.stdout.splitlines() if line.strip())
 
         if not changed_files:
-            return findings
+            click.echo(f"  No files changed since {ref}.", err=True)
+            return []
 
         # Also get untracked/modified files in working directory
         status_result = subprocess.run(
@@ -307,7 +326,7 @@ def _filter_by_git_diff(findings: list, target_path: str, ref: str) -> list:
         return filtered
 
     except Exception as e:
-        print(f"Warning: git diff filtering failed: {e}")
+        click.echo(f"  Warning: git diff filtering failed: {e}", err=True)
         return findings
 
 

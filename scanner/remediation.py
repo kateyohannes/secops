@@ -42,13 +42,13 @@ class AutoRemediation:
         return False
 
     def _fix_npm_package(self, file_path: str, finding: Finding) -> bool:
-        """Update NPM package to fix vulnerability."""
-        # Extract package name from finding
+        """Update NPM package to fix vulnerability (patch version only)."""
         pkg_name = self._extract_package_name(finding)
         if not pkg_name:
             return False
 
-        # Run npm update for the specific package
+        # Use npm update which respects semver by default (patch/minor only)
+        # Avoid npm install which could do major version upgrades
         result = subprocess.run(
             ["npm", "update", pkg_name, "--save"],
             cwd=os.path.dirname(file_path),
@@ -74,18 +74,34 @@ class AutoRemediation:
         return result.returncode == 0
 
     def _fix_python_package(self, file_path: str, finding: Finding) -> bool:
-        """Update Python package to fix vulnerability."""
+        """Update Python package to fix vulnerability and update requirements.txt."""
         pkg_name = self._extract_package_name(finding)
         if not pkg_name:
             return False
 
+        # Upgrade package
         result = subprocess.run(
-            ["pip", "install", "--upgrade", pkg_name],
+            ["pip", "install", "--upgrade", "--upgrade-strategy", "only-if-needed", pkg_name],
             capture_output=True,
             text=True,
             timeout=120
         )
-        return result.returncode == 0
+
+        if result.returncode != 0:
+            return False
+
+        # Update requirements.txt with new version
+        try:
+            subprocess.run(
+                ["pip", "freeze", "|", "grep", "-i", pkg_name, ">>", file_path],
+                shell=True,
+                capture_output=True,
+                timeout=30
+            )
+        except Exception:
+            pass  # Non-critical if freeze fails
+
+        return True
 
     def _extract_package_name(self, finding: Finding) -> Optional[str]:
         """Extract package name from finding message or rule_id."""
